@@ -23,6 +23,9 @@ function initializeDatabase() {
       quantity_in_stock INTEGER DEFAULT 0,
       min_stock_level INTEGER DEFAULT 5,
       supplier TEXT,
+      location TEXT,
+      serial_number TEXT,
+      notes TEXT,
       guarantee_available INTEGER DEFAULT 0,
       date_added TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))

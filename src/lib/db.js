@@ -88,6 +88,7 @@ function initializeTables(database) {
       min_stock_level INTEGER DEFAULT 5,
       supplier TEXT,
       guarantee_available INTEGER DEFAULT 0,
+      notes TEXT,
       date_added TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     )
@@ -101,6 +102,11 @@ function initializeTables(database) {
   // Add location column if it doesn't exist (migration)
   try {
     database.exec(`ALTER TABLE parts ADD COLUMN location TEXT`);
+  } catch (e) { /* Column already exists */ }
+
+  // Add notes column if it doesn't exist (migration)
+  try {
+    database.exec(`ALTER TABLE parts ADD COLUMN notes TEXT`);
   } catch (e) { /* Column already exists */ }
 
   // Create Customers table

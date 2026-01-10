@@ -114,6 +114,7 @@ export default function Inventory() {
     };
 
     const addCategory = async () => {
+
         if (!newCategory.trim()) return;
         try {
             const res = await fetch('/api/categories', {
@@ -161,27 +162,73 @@ export default function Inventory() {
         if (!importData.trim()) return;
         setImporting(true);
         try {
-            let parts;
-            try {
-                // Try parsing as JSON first
-                parts = JSON.parse(importData);
-            } catch (e) {
-                // Determine if CSV
-                // Format: Name, Category, Location, Quantity, Price
+            let parts = [];
+
+            // Auto-detect format based on delimiter (semicolon or comma)
+            const firstLine = importData.split('\n').filter(l => l.trim())[0];
+            const isSemicolon = firstLine && firstLine.includes(';');
+
+            if (isSemicolon) {
+                // User Format: SUPPLIER;CATEGORY;Serial Number;Description;Quantity in Stock;Purchase Price;GUARANTEE;Location
                 const lines = importData.split('\n').filter(l => l.trim());
-                // Skip header if present
-                const startIndex = lines[0].toLowerCase().includes('name') ? 1 : 0;
+                // Skip header if it contains "SUPPLIER" or "CATEGORY"
+                const startIndex = lines[0].toLowerCase().includes('supplier') ? 1 : 0;
 
                 parts = lines.slice(startIndex).map(line => {
-                    const [name, cat, loc, qty, price] = line.split(',').map(s => s.trim());
+                    // Split by semicolon, but ignore semicolons inside quotes (standard CSV behavior)
+                    const cols = line.split(/;(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(s => s.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+
+                    // Mapping based on user request
+                    const supplier = cols[0];
+                    const category = cols[1];
+                    const serial = cols[2];
+                    const desc = cols[3];
+                    // Remove any non-numeric characters for numbers (except . , -)
+                    const qtyStr = cols[4]?.replace(/[^0-9-]/g, '') || '';
+                    const qty = parseInt(qtyStr) || 0;
+
+                    // Clean price: remove currency symbols, spaces, then fix comma
+                    const priceStr = cols[5] ? cols[5].replace(/[^0-9.,-]/g, '').replace(',', '.') : '0';
+                    const purchase = parseFloat(priceStr) || 0;
+
+                    const guarantee = cols[6]?.toLowerCase().includes('yes') || cols[6]?.toLowerCase() === 'true' || cols[6] === '1';
+                    const location = cols[7];
+
+                    // Use Description as Name since Part Name wasn't provided in list
+                    const name = desc || serial || 'Unknown Part';
+
                     return {
                         part_name: name,
-                        category: cat || 'Other',
-                        location: loc || '',
-                        quantity_in_stock: parseInt(qty) || 0,
-                        selling_price: parseFloat(price) || 0
+                        category: category || 'Other',
+                        location: location || '',
+                        serial_number: serial || '',
+                        description: desc || '',
+                        quantity_in_stock: qty,
+                        purchase_price: purchase,
+                        selling_price: purchase * 1.5, // Default markup 50%
+                        supplier: supplier || '',
+                        guarantee_available: guarantee
                     };
                 });
+            } else {
+                // Default/Previous Simple Format: Name, Category, Location, Quantity, Price
+                try {
+                    parts = JSON.parse(importData);
+                } catch (e) {
+                    const lines = importData.split('\n').filter(l => l.trim());
+                    const startIndex = lines[0].toLowerCase().includes('name') ? 1 : 0;
+
+                    parts = lines.slice(startIndex).map(line => {
+                        const [name, cat, loc, qty, price] = line.split(',').map(s => s.trim());
+                        return {
+                            part_name: name,
+                            category: cat || 'Other',
+                            location: loc || '',
+                            quantity_in_stock: parseInt(qty) || 0,
+                            selling_price: parseFloat(price) || 0
+                        };
+                    });
+                }
             }
 
             const res = await fetch('/api/parts/import', {
@@ -201,6 +248,7 @@ export default function Inventory() {
                 alert('Import failed: ' + result.error);
             }
         } catch (e) {
+            console.error(e);
             alert('Failed to process import data. Check format.');
         } finally {
             setImporting(false);
@@ -413,13 +461,17 @@ export default function Inventory() {
                 footer={<><button className="btn btn-secondary" onClick={() => setImportModalOpen(false)}>Cancel</button><button className="btn btn-primary" onClick={handleImport} disabled={importing}>{importing ? 'Importing...' : 'Import Data'}</button></>}>
                 <div className="form-group">
                     <label className="form-label">Paste CSV Data</label>
-                    <p className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '8px' }}>Format: Name, Category, Location, Quantity, Price</p>
+                    <p className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '8px' }}>
+                        <strong>Supported Formats:</strong><br />
+                        1. Simple: <code>Name, Category, Location, Quantity, Selling Price</code><br />
+                        2. Your Format (Semicolon): <code>SUPPLIER; CATEGORY; Serial; Description; Qty; Price; Guarantee; Location</code>
+                    </p>
                     <textarea
                         className="form-textarea"
                         rows={10}
                         value={importData}
                         onChange={(e) => setImportData(e.target.value)}
-                        placeholder={`Example:\nPump X100, Washing Machine Parts, Shelf A, 5, 25.50\nMotor Y200, Refrigerator Parts, Warehouse 1, 2, 85.00`}
+                        placeholder={`Paste your CSV here...`}
                     ></textarea>
                 </div>
             </Modal>
