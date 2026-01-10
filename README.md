@@ -46,7 +46,7 @@ The app is protected with a login system.
 
 ### Default Credentials
 - **Username:** `demo`
-- **Password:** `demo`
+- **Password:** ``
 
 ### Changing Your Password
 1. Log in with the default credentials
