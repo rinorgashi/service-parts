@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import {
     LayoutDashboard, Package, Users, ShoppingCart, TruckIcon,
-    Wrench, Settings, LogOut
+    Wrench, Settings, LogOut, X
 } from 'lucide-react';
 
 const navItems = [
@@ -27,19 +27,35 @@ const navItems = [
     }
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }) {
     const pathname = usePathname();
     const { data: session } = useSession();
 
+    // Close sidebar when navigating on mobile
+    const handleNavClick = () => {
+        if (onClose && window.innerWidth < 769) {
+            onClose();
+        }
+    };
+
     return (
-        <aside className="sidebar">
-            <div className="sidebar-header">
-                <Link href="/" className="sidebar-logo">
+        <aside className={`sidebar ${isOpen ? 'mobile-open' : ''}`}>
+            <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Link href="/" className="sidebar-logo" onClick={handleNavClick}>
                     <div className="sidebar-logo-icon">
                         <Wrench size={22} color="white" />
                     </div>
                     <span>ServiceParts</span>
                 </Link>
+                {/* Close button for mobile */}
+                <button
+                    onClick={onClose}
+                    className="btn-icon"
+                    style={{ display: isOpen ? 'flex' : 'none', background: 'transparent', border: 'none', color: 'var(--text-muted)' }}
+                    aria-label="Close menu"
+                >
+                    <X size={24} />
+                </button>
             </div>
 
             <nav className="sidebar-nav">
@@ -50,7 +66,12 @@ export default function Sidebar() {
                             const Icon = item.icon;
                             const isActive = pathname === item.href;
                             return (
-                                <Link key={item.href} href={item.href} className={`nav-link ${isActive ? 'active' : ''}`}>
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className={`nav-link ${isActive ? 'active' : ''}`}
+                                    onClick={handleNavClick}
+                                >
                                     <Icon size={20} className="nav-link-icon" />
                                     <span>{item.label}</span>
                                 </Link>
@@ -61,7 +82,11 @@ export default function Sidebar() {
 
                 <div className="nav-section">
                     <div className="nav-section-title">Account</div>
-                    <Link href="/settings" className={`nav-link ${pathname === '/settings' ? 'active' : ''}`}>
+                    <Link
+                        href="/settings"
+                        className={`nav-link ${pathname === '/settings' ? 'active' : ''}`}
+                        onClick={handleNavClick}
+                    >
                         <Settings size={20} className="nav-link-icon" />
                         <span>Settings</span>
                     </Link>

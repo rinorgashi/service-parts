@@ -126,6 +126,17 @@ export default function Inventory() {
 
     // Camera scanning for serial numbers
     const startScanning = async () => {
+        // Check if secure context
+        if (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost') {
+            alert('⚠️ Camera Access Blocked\n\nTo use the camera, you must use HTTPS (SSL) or localhost.\n\nBrowser security blocks camera access on standard HTTP connections.\n\nPlease type the serial number manually for now.');
+            return;
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('Camera API not supported in this browser. Please type manually.');
+            return;
+        }
+
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
             if (videoRef.current) {
@@ -134,7 +145,8 @@ export default function Inventory() {
             }
             setScanning(true);
         } catch (e) {
-            alert('Camera access denied or not available. Please enter serial number manually.');
+            console.error(e);
+            alert('Camera access denied. Please grant permission or type manually.\n\nError: ' + e.message);
         }
     };
 

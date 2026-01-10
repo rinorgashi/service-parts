@@ -40,7 +40,7 @@ apt update && apt upgrade -y
 
 ### 2. Install Node.js (Version 20)
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | -E bash -
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs
 ```
 
