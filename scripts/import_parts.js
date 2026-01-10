@@ -5,6 +5,12 @@ const path = require('path');
 const dbPath = path.join(__dirname, '../database/service-parts.db');
 const db = new Database(dbPath);
 
+// --- MIGRATION: Ensure columns exist ---
+try { db.prepare("ALTER TABLE parts ADD COLUMN serial_number TEXT").run(); } catch (e) {}
+try { db.prepare("ALTER TABLE parts ADD COLUMN location TEXT").run(); } catch (e) {}
+try { db.prepare("ALTER TABLE parts ADD COLUMN notes TEXT").run(); } catch (e) {}
+// ---------------------------------------
+
 const csvPath = path.join(__dirname, '../parts.csv');
 
 function parseLine(line) {
