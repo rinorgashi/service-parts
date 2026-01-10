@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Header from '@/components/Header';
 import Modal from '@/components/Modal';
-import { Search, Edit, Trash2, Package, AlertTriangle, Camera, Plus, X, Upload, MapPin } from 'lucide-react';
+import { Search, Edit, Trash2, Package, AlertTriangle, Camera, Plus, X, MapPin } from 'lucide-react';
 
 export default function Inventory() {
     const [parts, setParts] = useState([]);
@@ -17,11 +17,8 @@ export default function Inventory() {
     const [modalOpen, setModalOpen] = useState(false);
     const [categoryModalOpen, setCategoryModalOpen] = useState(false);
     const [locationModalOpen, setLocationModalOpen] = useState(false);
-    const [importModalOpen, setImportModalOpen] = useState(false);
     const [newCategory, setNewCategory] = useState('');
     const [newLocation, setNewLocation] = useState('');
-    const [importData, setImportData] = useState('');
-    const [importing, setImporting] = useState(false);
     const [editingPart, setEditingPart] = useState(null);
     const [scanning, setScanning] = useState(false);
     const videoRef = useRef(null);
@@ -158,103 +155,6 @@ export default function Inventory() {
         setLocations(await locRes.json());
     };
 
-    const handleImport = async () => {
-        if (!importData.trim()) return;
-        setImporting(true);
-        try {
-            let parts = [];
-
-            // Auto-detect format based on delimiter (semicolon or comma)
-            const firstLine = importData.split('\n').filter(l => l.trim())[0];
-            const isSemicolon = firstLine && firstLine.includes(';');
-
-            if (isSemicolon) {
-                // User Format: SUPPLIER;CATEGORY;Serial Number;Description;Quantity in Stock;Purchase Price;GUARANTEE;Location
-                const lines = importData.split('\n').filter(l => l.trim());
-                // Skip header if it contains "SUPPLIER" or "CATEGORY"
-                const startIndex = lines[0].toLowerCase().includes('supplier') ? 1 : 0;
-
-                parts = lines.slice(startIndex).map(line => {
-                    // Split by semicolon, but ignore semicolons inside quotes (standard CSV behavior)
-                    const cols = line.split(/;(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(s => s.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
-
-                    // Mapping based on user request
-                    const supplier = cols[0];
-                    const category = cols[1];
-                    const serial = cols[2];
-                    const desc = cols[3];
-                    // Remove any non-numeric characters for numbers (except . , -)
-                    const qtyStr = cols[4]?.replace(/[^0-9-]/g, '') || '';
-                    const qty = parseInt(qtyStr) || 0;
-
-                    // Clean price: remove currency symbols, spaces, then fix comma
-                    const priceStr = cols[5] ? cols[5].replace(/[^0-9.,-]/g, '').replace(',', '.') : '0';
-                    const purchase = parseFloat(priceStr) || 0;
-
-                    const guarantee = cols[6]?.toLowerCase().includes('yes') || cols[6]?.toLowerCase() === 'true' || cols[6] === '1';
-                    const location = cols[7];
-
-                    // Use Description as Name since Part Name wasn't provided in list
-                    const name = desc || serial || 'Unknown Part';
-
-                    return {
-                        part_name: name,
-                        category: category || 'Other',
-                        location: location || '',
-                        serial_number: serial || '',
-                        description: desc || '',
-                        quantity_in_stock: qty,
-                        purchase_price: purchase,
-                        selling_price: purchase * 1.5, // Default markup 50%
-                        supplier: supplier || '',
-                        guarantee_available: guarantee
-                    };
-                });
-            } else {
-                // Default/Previous Simple Format: Name, Category, Location, Quantity, Price
-                try {
-                    parts = JSON.parse(importData);
-                } catch (e) {
-                    const lines = importData.split('\n').filter(l => l.trim());
-                    const startIndex = lines[0].toLowerCase().includes('name') ? 1 : 0;
-
-                    parts = lines.slice(startIndex).map(line => {
-                        const [name, cat, loc, qty, price] = line.split(',').map(s => s.trim());
-                        return {
-                            part_name: name,
-                            category: cat || 'Other',
-                            location: loc || '',
-                            quantity_in_stock: parseInt(qty) || 0,
-                            selling_price: parseFloat(price) || 0
-                        };
-                    });
-                }
-            }
-
-            const res = await fetch('/api/parts/import', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ parts })
-            });
-
-            const result = await res.json();
-            if (result.success) {
-                alert(`Successfully imported ${result.count} parts.`);
-                if (result.errors) alert('Some errors occurred:\n' + result.errors.join('\n'));
-                setImportModalOpen(false);
-                setImportData('');
-                fetchData();
-            } else {
-                alert('Import failed: ' + result.error);
-            }
-        } catch (e) {
-            console.error(e);
-            alert('Failed to process import data. Check format.');
-        } finally {
-            setImporting(false);
-        }
-    };
-
     // Camera scanning for serial numbers
     const startScanning = async () => {
         // Check if secure context
@@ -324,7 +224,6 @@ export default function Inventory() {
                     <div className="flex gap-2">
                         <button className="btn btn-secondary" onClick={() => setCategoryModalOpen(true)} title="Manage Categories"><Package size={16} /></button>
                         <button className="btn btn-secondary" onClick={() => setLocationModalOpen(true)} title="Manage Locations"><MapPin size={16} /></button>
-                        <button className="btn btn-secondary" onClick={() => setImportModalOpen(true)} title="Import Parts"><Upload size={16} /></button>
                     </div>
                     <label className="form-checkbox" style={{ padding: '12px 16px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
                         <input type="checkbox" checked={showLowStock} onChange={(e) => setShowLowStock(e.target.checked)} />
@@ -453,26 +352,6 @@ export default function Inventory() {
                             </div>
                         ))}
                     </div>
-                </div>
-            </Modal>
-
-            {/* Import Parts Modal */}
-            <Modal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} title="Import Parts"
-                footer={<><button className="btn btn-secondary" onClick={() => setImportModalOpen(false)}>Cancel</button><button className="btn btn-primary" onClick={handleImport} disabled={importing}>{importing ? 'Importing...' : 'Import Data'}</button></>}>
-                <div className="form-group">
-                    <label className="form-label">Paste CSV Data</label>
-                    <p className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '8px' }}>
-                        <strong>Supported Formats:</strong><br />
-                        1. Simple: <code>Name, Category, Location, Quantity, Selling Price</code><br />
-                        2. Your Format (Semicolon): <code>SUPPLIER; CATEGORY; Serial; Description; Qty; Price; Guarantee; Location</code>
-                    </p>
-                    <textarea
-                        className="form-textarea"
-                        rows={10}
-                        value={importData}
-                        onChange={(e) => setImportData(e.target.value)}
-                        placeholder={`Paste your CSV here...`}
-                    ></textarea>
                 </div>
             </Modal>
         </>
