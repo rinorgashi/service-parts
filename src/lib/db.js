@@ -63,12 +63,23 @@ function initializeTables(database) {
     defaultCategories.forEach(cat => insertCat.run(cat));
   }
 
+  // Create Locations table
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS locations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // Create Parts table with serial_number field
   database.exec(`
     CREATE TABLE IF NOT EXISTS parts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       part_name TEXT NOT NULL,
       category TEXT NOT NULL,
+      location TEXT,
       serial_number TEXT,
       description TEXT,
       purchase_price REAL DEFAULT 0,
@@ -85,6 +96,11 @@ function initializeTables(database) {
   // Add serial_number column if it doesn't exist (migration)
   try {
     database.exec(`ALTER TABLE parts ADD COLUMN serial_number TEXT`);
+  } catch (e) { /* Column already exists */ }
+
+  // Add location column if it doesn't exist (migration)
+  try {
+    database.exec(`ALTER TABLE parts ADD COLUMN location TEXT`);
   } catch (e) { /* Column already exists */ }
 
   // Create Customers table

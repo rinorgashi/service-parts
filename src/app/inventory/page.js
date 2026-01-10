@@ -3,23 +3,30 @@
 import { useState, useEffect, useRef } from 'react';
 import Header from '@/components/Header';
 import Modal from '@/components/Modal';
-import { Search, Edit, Trash2, Package, AlertTriangle, Camera, Plus, X } from 'lucide-react';
+import { Search, Edit, Trash2, Package, AlertTriangle, Camera, Plus, X, Upload, MapPin } from 'lucide-react';
 
 export default function Inventory() {
     const [parts, setParts] = useState([]);
     const [categories, setCategories] = useState([]);
+    const [locations, setLocations] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
+    const [locationFilter, setLocationFilter] = useState('');
     const [showLowStock, setShowLowStock] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
     const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+    const [locationModalOpen, setLocationModalOpen] = useState(false);
+    const [importModalOpen, setImportModalOpen] = useState(false);
     const [newCategory, setNewCategory] = useState('');
+    const [newLocation, setNewLocation] = useState('');
+    const [importData, setImportData] = useState('');
+    const [importing, setImporting] = useState(false);
     const [editingPart, setEditingPart] = useState(null);
     const [scanning, setScanning] = useState(false);
     const videoRef = useRef(null);
     const [formData, setFormData] = useState({
-        part_name: '', category: '', serial_number: '', description: '',
+        part_name: '', category: '', location: '', serial_number: '', description: '',
         purchase_price: '', selling_price: '', quantity_in_stock: '',
         min_stock_level: '5', supplier: '', guarantee_available: false
     });
@@ -28,11 +35,12 @@ export default function Inventory() {
 
     const fetchData = async () => {
         try {
-            const [partsRes, catsRes] = await Promise.all([
-                fetch('/api/parts'), fetch('/api/categories')
+            const [partsRes, catsRes, locsRes] = await Promise.all([
+                fetch('/api/parts'), fetch('/api/categories'), fetch('/api/locations')
             ]);
             setParts(await partsRes.json());
             setCategories(await catsRes.json());
+            setLocations(await locsRes.json());
         } catch (e) { console.error(e); } finally { setLoading(false); }
     };
 
@@ -41,6 +49,7 @@ export default function Inventory() {
             const params = new URLSearchParams();
             if (search) params.set('search', search);
             if (categoryFilter) params.set('category', categoryFilter);
+            if (locationFilter) params.set('location', locationFilter);
             if (showLowStock) params.set('lowStock', 'true');
             const res = await fetch(`/api/parts?${params}`);
             setParts(await res.json());
@@ -50,12 +59,13 @@ export default function Inventory() {
     useEffect(() => {
         const timer = setTimeout(() => { fetchParts(); }, 300);
         return () => clearTimeout(timer);
-    }, [search, categoryFilter, showLowStock]);
+    }, [search, categoryFilter, locationFilter, showLowStock]);
 
     const openAddModal = () => {
         setEditingPart(null);
         setFormData({
-            part_name: '', category: categories[0]?.name || '', serial_number: '', description: '',
+            part_name: '', category: categories[0]?.name || '', location: locations[0]?.name || '',
+            serial_number: '', description: '',
             purchase_price: '', selling_price: '', quantity_in_stock: '',
             min_stock_level: '5', supplier: '', guarantee_available: false
         });
@@ -65,7 +75,8 @@ export default function Inventory() {
     const openEditModal = (part) => {
         setEditingPart(part);
         setFormData({
-            part_name: part.part_name, category: part.category, serial_number: part.serial_number || '',
+            part_name: part.part_name, category: part.category, location: part.location || '',
+            serial_number: part.serial_number || '',
             description: part.description || '', purchase_price: part.purchase_price?.toString() || '',
             selling_price: part.selling_price?.toString() || '', quantity_in_stock: part.quantity_in_stock?.toString() || '',
             min_stock_level: part.min_stock_level?.toString() || '5', supplier: part.supplier || '',
@@ -124,6 +135,78 @@ export default function Inventory() {
         setCategories(await catsRes.json());
     };
 
+    const addLocation = async () => {
+        if (!newLocation.trim()) return;
+        try {
+            const res = await fetch('/api/locations', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newLocation.trim() })
+            });
+            if (!res.ok) { const d = await res.json(); alert(d.error); return; }
+            setNewLocation('');
+            const locRes = await fetch('/api/locations');
+            setLocations(await locRes.json());
+        } catch (e) { alert('Failed to add'); }
+    };
+
+    const deleteLocation = async (id) => {
+        if (!confirm('Delete this location?')) return;
+        const res = await fetch(`/api/locations?id=${id}`, { method: 'DELETE' });
+        if (!res.ok) { const d = await res.json(); alert(d.error); return; }
+        const locRes = await fetch('/api/locations');
+        setLocations(await locRes.json());
+    };
+
+    const handleImport = async () => {
+        if (!importData.trim()) return;
+        setImporting(true);
+        try {
+            let parts;
+            try {
+                // Try parsing as JSON first
+                parts = JSON.parse(importData);
+            } catch (e) {
+                // Determine if CSV
+                // Format: Name, Category, Location, Quantity, Price
+                const lines = importData.split('\n').filter(l => l.trim());
+                // Skip header if present
+                const startIndex = lines[0].toLowerCase().includes('name') ? 1 : 0;
+
+                parts = lines.slice(startIndex).map(line => {
+                    const [name, cat, loc, qty, price] = line.split(',').map(s => s.trim());
+                    return {
+                        part_name: name,
+                        category: cat || 'Other',
+                        location: loc || '',
+                        quantity_in_stock: parseInt(qty) || 0,
+                        selling_price: parseFloat(price) || 0
+                    };
+                });
+            }
+
+            const res = await fetch('/api/parts/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ parts })
+            });
+
+            const result = await res.json();
+            if (result.success) {
+                alert(`Successfully imported ${result.count} parts.`);
+                if (result.errors) alert('Some errors occurred:\n' + result.errors.join('\n'));
+                setImportModalOpen(false);
+                setImportData('');
+                fetchData();
+            } else {
+                alert('Import failed: ' + result.error);
+            }
+        } catch (e) {
+            alert('Failed to process import data. Check format.');
+        } finally {
+            setImporting(false);
+        }
+    };
+
     // Camera scanning for serial numbers
     const startScanning = async () => {
         // Check if secure context
@@ -163,8 +246,6 @@ export default function Inventory() {
         canvas.width = videoRef.current.videoWidth;
         canvas.height = videoRef.current.videoHeight;
         canvas.getContext('2d').drawImage(videoRef.current, 0, 0);
-        // For a full barcode scanning solution, you'd integrate a library like QuaggaJS or ZXing
-        // For now, we'll prompt user to enter what they see
         const serial = prompt('Enter the serial number you see on the screen:');
         if (serial) setFormData({ ...formData, serial_number: serial });
         stopScanning();
@@ -184,11 +265,19 @@ export default function Inventory() {
                         <Search size={18} className="search-bar-icon" />
                         <input type="text" placeholder="Search parts or serial numbers..." value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
-                    <select className="form-select" style={{ width: 'auto', minWidth: '180px' }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+                    <select className="form-select" style={{ width: 'auto', minWidth: '150px' }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
                         <option value="">All Categories</option>
                         {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                     </select>
-                    <button className="btn btn-secondary" onClick={() => setCategoryModalOpen(true)}><Plus size={16} /> Manage Categories</button>
+                    <select className="form-select" style={{ width: 'auto', minWidth: '150px' }} value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}>
+                        <option value="">All Locations</option>
+                        {locations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    </select>
+                    <div className="flex gap-2">
+                        <button className="btn btn-secondary" onClick={() => setCategoryModalOpen(true)} title="Manage Categories"><Package size={16} /></button>
+                        <button className="btn btn-secondary" onClick={() => setLocationModalOpen(true)} title="Manage Locations"><MapPin size={16} /></button>
+                        <button className="btn btn-secondary" onClick={() => setImportModalOpen(true)} title="Import Parts"><Upload size={16} /></button>
+                    </div>
                     <label className="form-checkbox" style={{ padding: '12px 16px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
                         <input type="checkbox" checked={showLowStock} onChange={(e) => setShowLowStock(e.target.checked)} />
                         <span>Low Stock Only</span>
@@ -204,13 +293,14 @@ export default function Inventory() {
                 ) : (
                     <div className="table-container">
                         <table className="table">
-                            <thead><tr><th>Part Name</th><th>Serial #</th><th>Category</th><th>Stock</th><th>Purchase</th><th>Selling</th><th>Supplier</th><th>Guarantee</th><th>Actions</th></tr></thead>
+                            <thead><tr><th>Part Name</th><th>Serial #</th><th>Category</th><th>Location</th><th>Stock</th><th>Purchase</th><th>Selling</th><th>Supplier</th><th>Guarantee</th><th>Actions</th></tr></thead>
                             <tbody>
                                 {parts.map((p) => (
                                     <tr key={p.id}>
                                         <td><strong>{p.part_name}</strong>{p.description && <div className="text-muted" style={{ fontSize: '0.8rem' }}>{p.description}</div>}</td>
                                         <td><span className="font-mono" style={{ fontSize: '0.85rem' }}>{p.serial_number || '-'}</span></td>
                                         <td><span className="badge badge-default">{p.category}</span></td>
+                                        <td><span className="badge badge-info">{p.location || '-'}</span></td>
                                         <td><div className="stock-indicator"><span className={`stock-dot ${getStockStatus(p.quantity_in_stock, p.min_stock_level)}`}></span>{p.quantity_in_stock}{p.quantity_in_stock <= p.min_stock_level && <AlertTriangle size={14} className="text-warning" style={{ marginLeft: '4px' }} />}</div></td>
                                         <td>{formatCurrency(p.purchase_price)}</td>
                                         <td>{formatCurrency(p.selling_price)}</td>
@@ -236,7 +326,16 @@ export default function Inventory() {
                                 {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                             </select>
                         </div>
+                        <div className="form-group"><label className="form-label">Location</label>
+                            <select className="form-select" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })}>
+                                <option value="">Select Location...</option>
+                                {locations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="form-row">
                         <div className="form-group"><label className="form-label">Supplier</label><input type="text" className="form-input" value={formData.supplier} onChange={(e) => setFormData({ ...formData, supplier: e.target.value })} /></div>
+                        <div className="form-group"><label className="form-checkbox" style={{ marginTop: '30px' }}><input type="checkbox" checked={formData.guarantee_available} onChange={(e) => setFormData({ ...formData, guarantee_available: e.target.checked })} /><span>Guarantee Available</span></label></div>
                     </div>
                     <div className="form-group">
                         <label className="form-label">Serial Number</label>
@@ -260,7 +359,6 @@ export default function Inventory() {
                         <div className="form-group"><label className="form-label">Quantity in Stock</label><input type="number" className="form-input" value={formData.quantity_in_stock} onChange={(e) => setFormData({ ...formData, quantity_in_stock: e.target.value })} /></div>
                         <div className="form-group"><label className="form-label">Min Stock Level</label><input type="number" className="form-input" value={formData.min_stock_level} onChange={(e) => setFormData({ ...formData, min_stock_level: e.target.value })} /></div>
                     </div>
-                    <div className="form-group"><label className="form-checkbox"><input type="checkbox" checked={formData.guarantee_available} onChange={(e) => setFormData({ ...formData, guarantee_available: e.target.checked })} /><span>Guarantee Available</span></label></div>
                 </form>
             </Modal>
 
@@ -284,6 +382,45 @@ export default function Inventory() {
                             </div>
                         ))}
                     </div>
+                </div>
+            </Modal>
+
+            {/* Manage Locations Modal */}
+            <Modal isOpen={locationModalOpen} onClose={() => setLocationModalOpen(false)} title="Manage Locations"
+                footer={<button className="btn btn-secondary" onClick={() => setLocationModalOpen(false)}>Close</button>}>
+                <div className="form-group">
+                    <label className="form-label">Add New Location</label>
+                    <div className="flex gap-2">
+                        <input type="text" className="form-input" value={newLocation} onChange={(e) => setNewLocation(e.target.value)} placeholder="Location name (e.g. Shelf A)..." />
+                        <button className="btn btn-primary" onClick={addLocation}><Plus size={18} /> Add</button>
+                    </div>
+                </div>
+                <div style={{ marginTop: '20px' }}>
+                    <label className="form-label">Existing Locations</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {locations.map(l => (
+                            <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-tertiary)', padding: '8px 12px', borderRadius: 'var(--radius-md)' }}>
+                                <span>{l.name}</span>
+                                <button className="btn btn-secondary btn-icon" style={{ width: '24px', height: '24px', padding: 0 }} onClick={() => deleteLocation(l.id)}><X size={14} /></button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Import Parts Modal */}
+            <Modal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} title="Import Parts"
+                footer={<><button className="btn btn-secondary" onClick={() => setImportModalOpen(false)}>Cancel</button><button className="btn btn-primary" onClick={handleImport} disabled={importing}>{importing ? 'Importing...' : 'Import Data'}</button></>}>
+                <div className="form-group">
+                    <label className="form-label">Paste CSV Data</label>
+                    <p className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '8px' }}>Format: Name, Category, Location, Quantity, Price</p>
+                    <textarea
+                        className="form-textarea"
+                        rows={10}
+                        value={importData}
+                        onChange={(e) => setImportData(e.target.value)}
+                        placeholder={`Example:\nPump X100, Washing Machine Parts, Shelf A, 5, 25.50\nMotor Y200, Refrigerator Parts, Warehouse 1, 2, 85.00`}
+                    ></textarea>
                 </div>
             </Modal>
         </>

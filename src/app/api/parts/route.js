@@ -8,6 +8,7 @@ export async function GET(request) {
         const { searchParams } = new URL(request.url);
         const search = searchParams.get('search') || '';
         const category = searchParams.get('category') || '';
+        const location = searchParams.get('location') || ''; // Added location filter
         const lowStock = searchParams.get('lowStock') === 'true';
 
         let query = 'SELECT * FROM parts WHERE 1=1';
@@ -21,6 +22,11 @@ export async function GET(request) {
         if (category) {
             query += ' AND category = ?';
             params.push(category);
+        }
+
+        if (location) {
+            query += ' AND location = ?'; // Added location filter
+            params.push(location);
         }
 
         if (lowStock) {
@@ -46,6 +52,7 @@ export async function POST(request) {
         const {
             part_name,
             category,
+            location, // Added location
             serial_number,
             description,
             purchase_price,
@@ -58,14 +65,15 @@ export async function POST(request) {
 
         const stmt = db.prepare(`
       INSERT INTO parts (
-        part_name, category, serial_number, description, purchase_price, selling_price,
+        part_name, category, location, serial_number, description, purchase_price, selling_price,
         quantity_in_stock, min_stock_level, supplier, guarantee_available
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
         const result = stmt.run(
             part_name,
             category,
+            location || '', // Added location
             serial_number || '',
             description || '',
             purchase_price || 0,
