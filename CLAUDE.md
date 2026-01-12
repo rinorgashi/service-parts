@@ -4,7 +4,7 @@ A full-stack inventory management application for home appliance repair business
 
 ## Purpose
 
-Helps repair shops manage spare parts inventory, customers, sales, purchases, and service records. Key business features include guarantee handling (parts free, labor charged) and automatic stock management.
+Helps repair shops manage spare parts inventory, customers, sales, purchases, and service records. Key business features include guarantee handling (parts free, labor charged), automatic stock management, and activity logging.
 
 ## Tech Stack
 
@@ -20,15 +20,17 @@ Helps repair shops manage spare parts inventory, customers, sales, purchases, an
 ```
 src/
 ├── app/
-│   ├── page.js              # Dashboard
-│   ├── inventory/page.js    # Parts inventory management
-│   ├── customers/page.js    # Customer management
-│   ├── sales/page.js        # Sales transactions
-│   ├── purchases/page.js    # Stock purchases
-│   ├── services/page.js     # Service/repair records
-│   ├── settings/page.js     # User settings
-│   ├── login/page.js        # Authentication
-│   └── api/                 # REST API endpoints
+│   ├── page.js                # Dashboard
+│   ├── inventory/page.js      # Parts inventory management
+│   ├── customers/page.js      # Customer management
+│   ├── sales/page.js          # Sales transactions
+│   ├── purchases/page.js      # Stock purchases
+│   ├── services/page.js       # Service/repair records
+│   ├── users/page.js          # User management (admin only)
+│   ├── activity-logs/page.js  # Activity logs (admin only)
+│   ├── settings/page.js       # User settings
+│   ├── login/page.js          # Authentication
+│   └── api/                   # REST API endpoints
 │       ├── auth/[...nextauth]/route.js
 │       ├── parts/route.js
 │       ├── customers/route.js
@@ -38,23 +40,25 @@ src/
 │       ├── categories/route.js
 │       ├── locations/route.js
 │       ├── stats/route.js
-│       ├── upload/route.js       # Image upload endpoint
-│       ├── users/route.js        # User management (admin only)
-│       └── user/route.js
+│       ├── upload/route.js         # Image upload
+│       ├── users/route.js          # User CRUD (admin only)
+│       ├── activity-logs/route.js  # Activity logs (admin only)
+│       └── user/route.js           # Current user settings
 ├── components/
-│   ├── AppLayout.js         # Main layout with sidebar
-│   ├── Sidebar.js           # Navigation
-│   ├── Header.js            # Page headers
-│   ├── Modal.js             # Reusable modal
-│   └── AuthProvider.js      # NextAuth provider
+│   ├── AppLayout.js           # Main layout with sidebar
+│   ├── Sidebar.js             # Navigation
+│   ├── Header.js              # Page headers
+│   ├── Modal.js               # Reusable modal
+│   └── AuthProvider.js        # NextAuth provider
 └── lib/
-    └── db.js                # Database connection & init
+    ├── db.js                  # Database connection & init
+    └── activityLog.js         # Activity logging helper
 
 database/
-├── service-parts.db         # SQLite database (gitignored)
-└── schema.js                # Schema documentation
+├── service-parts.db           # SQLite database (gitignored)
+└── schema.js                  # Schema documentation
 
-public/uploads/              # Uploaded part images (gitignored)
+public/uploads/                # Uploaded part images (gitignored)
 ```
 
 ## Database Tables
@@ -63,11 +67,11 @@ public/uploads/              # Uploaded part images (gitignored)
 2. **categories** - Part categories (TV, Refrigerator, etc.)
 3. **locations** - Storage locations (shelves, warehouses)
 4. **parts** - Inventory (name, category, location, serial, prices, stock, supplier, has_guarantee, image_path)
-5. **customers** - Customer records
+5. **customers** - Customer records (name, surname, phone, email, address, notes)
 6. **service_records** - Repair jobs with status tracking
 7. **sales** - Transactions (part, customer, quantity, unit_price, labour_cost, guarantee_included)
 8. **purchases** - Stock acquisition records
-9. **activity_logs** - User activity audit trail (username, action, entity_type, entity_id, details)
+9. **activity_logs** - User activity audit trail (username, action, entity_type, entity_id, entity_name, details)
 
 ## Key Business Logic
 
@@ -99,15 +103,18 @@ If guarantee: total_price = labour_cost only
 ### User Management
 - First user is automatically admin
 - Only admins can create/edit/delete users
-- Users have equal access to all features
+- Users have equal access to all features (except user management & logs)
 - Admin status stored in `is_admin` column
 - Session includes `isAdmin` flag for frontend checks
+- Cannot delete last admin or yourself
 
 ### Activity Logging
-- All create/update/delete actions are logged
-- Logs include: username, action, entity type, entity name, details
+- All create/update/delete actions are logged automatically
+- Logs include: timestamp, username, action, entity type, entity name, details
 - Viewable at /activity-logs (admin only)
 - Logged entities: parts, customers, sales, purchases
+- Filterable by user, action type, entity type
+- Paginated (50 per page)
 
 ## API Conventions
 
@@ -125,16 +132,28 @@ Response format: `{ success: true, data: ... }` or `{ error: "message" }`
 - Purple/blue gradient accents
 - Card-based layouts
 - Use existing CSS classes from globals.css
+- Lucide React for icons
 
 ## Common Commands
 
 ```bash
-npm run dev      # Development server
+npm run dev      # Development server (localhost:3000)
 npm run build    # Production build
 npm start        # Start production server
+```
+
+## Deployment
+
+VPS deployment via Git:
+```bash
+cd ~/service-parts
+git pull origin main
+npm run build
+pm2 restart service-parts
 ```
 
 ## Default Credentials
 
 - Username: `demo`
 - Password: `demo`
+- Role: Admin (first user)
