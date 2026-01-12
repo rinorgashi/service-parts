@@ -32,7 +32,8 @@ export const authOptions = {
 
                     return {
                         id: user.id.toString(),
-                        name: user.username
+                        name: user.username,
+                        isAdmin: user.is_admin === 1
                     };
                 } catch (error) {
                     console.error('Auth error:', error);
@@ -47,6 +48,20 @@ export const authOptions = {
     session: {
         strategy: 'jwt',
         maxAge: 24 * 60 * 60 // 24 hours
+    },
+    callbacks: {
+        async jwt({ token, user }) {
+            if (user) {
+                token.isAdmin = user.isAdmin;
+            }
+            return token;
+        },
+        async session({ session, token }) {
+            if (session.user) {
+                session.user.isAdmin = token.isAdmin;
+            }
+            return session;
+        }
     },
     secret: process.env.AUTH_SECRET || 'service-parts-default-secret-change-me'
 };

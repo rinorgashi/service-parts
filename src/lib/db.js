@@ -28,18 +28,33 @@ function initializeTables(database) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
+      is_admin INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     )
   `);
 
+  // Add is_admin column if it doesn't exist (migration)
+  try {
+    database.exec(`ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0`);
+  } catch (e) { /* Column already exists */ }
+
   // Insert default admin user if table is empty (demo:demo)
   const userCount = database.prepare('SELECT COUNT(*) as count FROM users').get();
   if (userCount.count === 0) {
-    // Default password: demo (bcrypt hash)
+    // Default password: demo (bcrypt hash) - first user is admin
     const bcrypt = require('bcryptjs');
     const defaultHash = bcrypt.hashSync('demo', 10);
-    database.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run('demo', defaultHash);
+    database.prepare('INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)').run('demo', defaultHash);
+  }
+
+  // Ensure at least one admin exists (make first user admin if none)
+  const adminCount = database.prepare('SELECT COUNT(*) as count FROM users WHERE is_admin = 1').get();
+  if (adminCount.count === 0) {
+    const firstUser = database.prepare('SELECT id FROM users ORDER BY id ASC LIMIT 1').get();
+    if (firstUser) {
+      database.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(firstUser.id);
+    }
   }
 
   // Create Categories table for user-defined categories

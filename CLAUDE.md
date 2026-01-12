@@ -39,6 +39,7 @@ src/
 │       ├── locations/route.js
 │       ├── stats/route.js
 │       ├── upload/route.js       # Image upload endpoint
+│       ├── users/route.js        # User management (admin only)
 │       └── user/route.js
 ├── components/
 │   ├── AppLayout.js         # Main layout with sidebar
@@ -58,7 +59,7 @@ public/uploads/              # Uploaded part images (gitignored)
 
 ## Database Tables
 
-1. **users** - Authentication (username, password_hash)
+1. **users** - Authentication (username, password_hash, is_admin)
 2. **categories** - Part categories (TV, Refrigerator, etc.)
 3. **locations** - Storage locations (shelves, warehouses)
 4. **parts** - Inventory (name, category, location, serial, prices, stock, supplier, has_guarantee, image_path)
@@ -93,6 +94,13 @@ If guarantee: total_price = labour_cost only
 - Max file size: 5MB
 - Allowed formats: JPEG, PNG, GIF, WebP
 - Upload API: `POST /api/upload` (multipart form data)
+
+### User Management
+- First user is automatically admin
+- Only admins can create/edit/delete users
+- Users have equal access to all features
+- Admin status stored in `is_admin` column
+- Session includes `isAdmin` flag for frontend checks
 
 ## API Conventions
 

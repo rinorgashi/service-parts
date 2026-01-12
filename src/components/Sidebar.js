@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import {
     LayoutDashboard, Package, Users, ShoppingCart, TruckIcon,
-    Wrench, Settings, LogOut, X
+    Wrench, Settings, LogOut, X, UserCog
 } from 'lucide-react';
 
 const navItems = [
@@ -82,6 +82,14 @@ export default function Sidebar({ isOpen, onClose }) {
 
                 <div className="nav-section">
                     <div className="nav-section-title">Account</div>
+                    <Link
+                        href="/users"
+                        className={`nav-link ${pathname === '/users' ? 'active' : ''}`}
+                        onClick={handleNavClick}
+                    >
+                        <UserCog size={20} className="nav-link-icon" />
+                        <span>User Management</span>
+                    </Link>
                     <Link
                         href="/settings"
                         className={`nav-link ${pathname === '/settings' ? 'active' : ''}`}
