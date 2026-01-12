@@ -29,6 +29,10 @@
 /database/*.db-journal
 !/database/.keep
 
+# uploads - user uploaded images
+/public/uploads/*
+!/public/uploads/.keep
+
 # debug
 npm-debug.log*
 yarn-debug.log*

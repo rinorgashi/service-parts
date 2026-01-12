@@ -52,7 +52,7 @@ export async function POST(request) {
         const {
             part_name,
             category,
-            location, // Added location
+            location,
             serial_number,
             description,
             purchase_price,
@@ -60,20 +60,21 @@ export async function POST(request) {
             quantity_in_stock,
             min_stock_level,
             supplier,
-            guarantee_available
+            guarantee_available,
+            image_path
         } = body;
 
         const stmt = db.prepare(`
       INSERT INTO parts (
         part_name, category, location, serial_number, description, purchase_price, selling_price,
-        quantity_in_stock, min_stock_level, supplier, guarantee_available
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        quantity_in_stock, min_stock_level, supplier, guarantee_available, image_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
         const result = stmt.run(
             part_name,
             category,
-            location || '', // Added location
+            location || '',
             serial_number || '',
             description || '',
             purchase_price || 0,
@@ -81,7 +82,8 @@ export async function POST(request) {
             quantity_in_stock || 0,
             min_stock_level || 5,
             supplier || '',
-            guarantee_available ? 1 : 0
+            guarantee_available ? 1 : 0,
+            image_path || ''
         );
 
         const newPart = db.prepare('SELECT * FROM parts WHERE id = ?').get(result.lastInsertRowid);

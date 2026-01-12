@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Header from '@/components/Header';
 import Modal from '@/components/Modal';
-import { Search, Edit, Trash2, Package, AlertTriangle, Camera, Plus, X, MapPin } from 'lucide-react';
+import { Search, Edit, Trash2, Package, AlertTriangle, Camera, Plus, X, MapPin, Upload, Image as ImageIcon } from 'lucide-react';
 
 export default function Inventory() {
     const [parts, setParts] = useState([]);
@@ -21,11 +21,13 @@ export default function Inventory() {
     const [newLocation, setNewLocation] = useState('');
     const [editingPart, setEditingPart] = useState(null);
     const [scanning, setScanning] = useState(false);
+    const [uploading, setUploading] = useState(false);
     const videoRef = useRef(null);
+    const fileInputRef = useRef(null);
     const [formData, setFormData] = useState({
         part_name: '', category: '', location: '', serial_number: '', description: '',
         purchase_price: '', selling_price: '', quantity_in_stock: '',
-        min_stock_level: '5', supplier: '', guarantee_available: false
+        min_stock_level: '5', supplier: '', guarantee_available: false, image_path: ''
     });
 
     useEffect(() => { fetchData(); }, []);
@@ -64,7 +66,7 @@ export default function Inventory() {
             part_name: '', category: categories[0]?.name || '', location: locations[0]?.name || '',
             serial_number: '', description: '',
             purchase_price: '', selling_price: '', quantity_in_stock: '',
-            min_stock_level: '5', supplier: '', guarantee_available: false
+            min_stock_level: '5', supplier: '', guarantee_available: false, image_path: ''
         });
         setModalOpen(true);
     };
@@ -77,7 +79,7 @@ export default function Inventory() {
             description: part.description || '', purchase_price: part.purchase_price?.toString() || '',
             selling_price: part.selling_price?.toString() || '', quantity_in_stock: part.quantity_in_stock?.toString() || '',
             min_stock_level: part.min_stock_level?.toString() || '5', supplier: part.supplier || '',
-            guarantee_available: !!part.guarantee_available
+            guarantee_available: !!part.guarantee_available, image_path: part.image_path || ''
         });
         setModalOpen(true);
     };
@@ -199,6 +201,40 @@ export default function Inventory() {
         stopScanning();
     };
 
+    const handleImageUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setUploading(true);
+        try {
+            const formDataUpload = new FormData();
+            formDataUpload.append('file', file);
+
+            const res = await fetch('/api/upload', {
+                method: 'POST',
+                body: formDataUpload
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || 'Failed to upload image');
+                return;
+            }
+
+            setFormData({ ...formData, image_path: data.imagePath });
+        } catch (err) {
+            console.error('Upload error:', err);
+            alert('Failed to upload image');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const removeImage = () => {
+        setFormData({ ...formData, image_path: '' });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
     const formatCurrency = (a) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR' }).format(a || 0);
     const getStockStatus = (qty, min) => qty === 0 ? 'low' : qty <= min ? 'medium' : 'high';
 
@@ -240,10 +276,11 @@ export default function Inventory() {
                 ) : (
                     <div className="table-container">
                         <table className="table">
-                            <thead><tr><th>Part Name</th><th>Serial #</th><th>Category</th><th>Location</th><th>Stock</th><th>Purchase</th><th>Selling</th><th>Supplier</th><th>Guarantee</th><th>Actions</th></tr></thead>
+                            <thead><tr><th style={{ width: '60px' }}>Image</th><th>Part Name</th><th>Serial #</th><th>Category</th><th>Location</th><th>Stock</th><th>Purchase</th><th>Selling</th><th>Supplier</th><th>Guarantee</th><th>Actions</th></tr></thead>
                             <tbody>
                                 {parts.map((p) => (
                                     <tr key={p.id}>
+                                        <td>{p.image_path ? <img src={p.image_path} alt={p.part_name} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: 'var(--radius-sm)' }} /> : <div style={{ width: '40px', height: '40px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ImageIcon size={18} className="text-muted" /></div>}</td>
                                         <td><strong>{p.part_name}</strong>{p.description && <div className="text-muted" style={{ fontSize: '0.8rem' }}>{p.description}</div>}</td>
                                         <td><span className="font-mono" style={{ fontSize: '0.85rem' }}>{p.serial_number || '-'}</span></td>
                                         <td><span className="badge badge-default">{p.category}</span></td>
@@ -298,6 +335,23 @@ export default function Inventory() {
                         )}
                     </div>
                     <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })}></textarea></div>
+                    <div className="form-group">
+                        <label className="form-label">Part Image</label>
+                        {formData.image_path ? (
+                            <div style={{ position: 'relative', display: 'inline-block' }}>
+                                <img src={formData.image_path} alt="Part" style={{ maxWidth: '200px', maxHeight: '150px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }} />
+                                <button type="button" className="btn btn-secondary btn-icon" style={{ position: 'absolute', top: '-8px', right: '-8px', width: '24px', height: '24px', padding: 0, borderRadius: '50%' }} onClick={removeImage}><X size={14} /></button>
+                            </div>
+                        ) : (
+                            <div>
+                                <input type="file" ref={fileInputRef} accept="image/jpeg,image/png,image/gif,image/webp" onChange={handleImageUpload} style={{ display: 'none' }} />
+                                <button type="button" className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                                    {uploading ? <><div className="spinner" style={{ width: '16px', height: '16px', marginRight: '8px' }}></div> Uploading...</> : <><Upload size={18} /> Upload Image</>}
+                                </button>
+                                <span className="text-muted" style={{ marginLeft: '12px', fontSize: '0.85rem' }}>Max 5MB (JPEG, PNG, GIF, WebP)</span>
+                            </div>
+                        )}
+                    </div>
                     <div className="form-row">
                         <div className="form-group"><label className="form-label">Purchase Price (€)</label><input type="number" step="0.01" className="form-input" value={formData.purchase_price} onChange={(e) => setFormData({ ...formData, purchase_price: e.target.value })} /></div>
                         <div className="form-group"><label className="form-label">Selling Price (€)</label><input type="number" step="0.01" className="form-input" value={formData.selling_price} onChange={(e) => setFormData({ ...formData, selling_price: e.target.value })} /></div>

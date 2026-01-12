@@ -109,6 +109,11 @@ function initializeTables(database) {
     database.exec(`ALTER TABLE parts ADD COLUMN notes TEXT`);
   } catch (e) { /* Column already exists */ }
 
+  // Add image_path column if it doesn't exist (migration)
+  try {
+    database.exec(`ALTER TABLE parts ADD COLUMN image_path TEXT`);
+  } catch (e) { /* Column already exists */ }
+
   // Create Customers table
   database.exec(`
     CREATE TABLE IF NOT EXISTS customers (
