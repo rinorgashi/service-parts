@@ -1,5 +1,7 @@
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { logActivity } from '@/lib/activityLog';
 
 // GET all customers
 export async function GET(request) {
@@ -29,6 +31,7 @@ export async function GET(request) {
 // POST create new customer
 export async function POST(request) {
     try {
+        const session = await getServerSession();
         const db = getDb();
         const body = await request.json();
 
@@ -46,6 +49,19 @@ export async function POST(request) {
         const result = stmt.run(name, surname, phone || '', email || '', address || '', notes || '');
 
         const newCustomer = db.prepare('SELECT * FROM customers WHERE id = ?').get(result.lastInsertRowid);
+
+        // Log activity
+        if (session?.user?.name) {
+            logActivity({
+                username: session.user.name,
+                action: 'create',
+                entityType: 'customer',
+                entityId: newCustomer.id,
+                entityName: `${name} ${surname}`,
+                details: `Created customer "${name} ${surname}"`
+            });
+        }
+
         return NextResponse.json(newCustomer, { status: 201 });
     } catch (error) {
         console.error('Error creating customer:', error);
@@ -56,6 +72,7 @@ export async function POST(request) {
 // PUT update customer
 export async function PUT(request) {
     try {
+        const session = await getServerSession();
         const db = getDb();
         const body = await request.json();
         const { id, ...updates } = body;
@@ -82,6 +99,19 @@ export async function PUT(request) {
         stmt.run(...values, id);
 
         const updatedCustomer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+
+        // Log activity
+        if (session?.user?.name) {
+            logActivity({
+                username: session.user.name,
+                action: 'update',
+                entityType: 'customer',
+                entityId: id,
+                entityName: `${updatedCustomer.name} ${updatedCustomer.surname}`,
+                details: `Updated customer "${updatedCustomer.name} ${updatedCustomer.surname}"`
+            });
+        }
+
         return NextResponse.json(updatedCustomer);
     } catch (error) {
         console.error('Error updating customer:', error);
@@ -92,6 +122,7 @@ export async function PUT(request) {
 // DELETE customer
 export async function DELETE(request) {
     try {
+        const session = await getServerSession();
         const db = getDb();
         const { searchParams } = new URL(request.url);
         const id = searchParams.get('id');
@@ -100,7 +131,23 @@ export async function DELETE(request) {
             return NextResponse.json({ error: 'Customer ID is required' }, { status: 400 });
         }
 
+        // Get customer info before deleting
+        const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+
         db.prepare('DELETE FROM customers WHERE id = ?').run(id);
+
+        // Log activity
+        if (session?.user?.name && customer) {
+            logActivity({
+                username: session.user.name,
+                action: 'delete',
+                entityType: 'customer',
+                entityId: id,
+                entityName: `${customer.name} ${customer.surname}`,
+                details: `Deleted customer "${customer.name} ${customer.surname}"`
+            });
+        }
+
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error('Error deleting customer:', error);

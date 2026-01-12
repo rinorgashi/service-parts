@@ -67,6 +67,7 @@ public/uploads/              # Uploaded part images (gitignored)
 6. **service_records** - Repair jobs with status tracking
 7. **sales** - Transactions (part, customer, quantity, unit_price, labour_cost, guarantee_included)
 8. **purchases** - Stock acquisition records
+9. **activity_logs** - User activity audit trail (username, action, entity_type, entity_id, details)
 
 ## Key Business Logic
 
@@ -101,6 +102,12 @@ If guarantee: total_price = labour_cost only
 - Users have equal access to all features
 - Admin status stored in `is_admin` column
 - Session includes `isAdmin` flag for frontend checks
+
+### Activity Logging
+- All create/update/delete actions are logged
+- Logs include: username, action, entity type, entity name, details
+- Viewable at /activity-logs (admin only)
+- Logged entities: parts, customers, sales, purchases
 
 ## API Conventions
 

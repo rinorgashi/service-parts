@@ -1,5 +1,7 @@
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { logActivity } from '@/lib/activityLog';
 
 // GET all purchases with joins
 export async function GET(request) {
@@ -11,7 +13,7 @@ export async function GET(request) {
         const partId = searchParams.get('partId');
 
         let query = `
-      SELECT 
+      SELECT
         pur.*,
         p.part_name,
         p.category
@@ -49,6 +51,7 @@ export async function GET(request) {
 // POST create new purchase (add stock)
 export async function POST(request) {
     try {
+        const session = await getServerSession();
         const db = getDb();
         const body = await request.json();
 
@@ -94,8 +97,8 @@ export async function POST(request) {
 
             // Update stock
             db.prepare(`
-        UPDATE parts 
-        SET quantity_in_stock = quantity_in_stock + ?, 
+        UPDATE parts
+        SET quantity_in_stock = quantity_in_stock + ?,
             purchase_price = ?,
             updated_at = datetime('now')
         WHERE id = ?
@@ -107,7 +110,7 @@ export async function POST(request) {
         const purchaseId = insertPurchase();
 
         const newPurchase = db.prepare(`
-      SELECT 
+      SELECT
         pur.*,
         p.part_name,
         p.category
@@ -115,6 +118,18 @@ export async function POST(request) {
       LEFT JOIN parts p ON pur.part_id = p.id
       WHERE pur.id = ?
     `).get(purchaseId);
+
+        // Log activity
+        if (session?.user?.name) {
+            logActivity({
+                username: session.user.name,
+                action: 'create',
+                entityType: 'purchase',
+                entityId: purchaseId,
+                entityName: `${part.part_name} x${quantity}`,
+                details: `Purchased ${quantity}x "${part.part_name}" for €${total_cost.toFixed(2)}`
+            });
+        }
 
         return NextResponse.json(newPurchase, { status: 201 });
     } catch (error) {
@@ -126,6 +141,7 @@ export async function POST(request) {
 // DELETE purchase (for corrections - also removes stock)
 export async function DELETE(request) {
     try {
+        const session = await getServerSession();
         const db = getDb();
         const { searchParams } = new URL(request.url);
         const id = searchParams.get('id');
@@ -134,8 +150,13 @@ export async function DELETE(request) {
             return NextResponse.json({ error: 'Purchase ID is required' }, { status: 400 });
         }
 
-        // Get purchase info first
-        const purchase = db.prepare('SELECT * FROM purchases WHERE id = ?').get(id);
+        // Get purchase info first with part name
+        const purchase = db.prepare(`
+            SELECT pur.*, p.part_name
+            FROM purchases pur
+            LEFT JOIN parts p ON pur.part_id = p.id
+            WHERE pur.id = ?
+        `).get(id);
         if (!purchase) {
             return NextResponse.json({ error: 'Purchase not found' }, { status: 404 });
         }
@@ -152,7 +173,7 @@ export async function DELETE(request) {
         const deletePurchase = db.transaction(() => {
             // Remove stock
             db.prepare(`
-        UPDATE parts 
+        UPDATE parts
         SET quantity_in_stock = quantity_in_stock - ?,
             updated_at = datetime('now')
         WHERE id = ?
@@ -163,6 +184,18 @@ export async function DELETE(request) {
         });
 
         deletePurchase();
+
+        // Log activity
+        if (session?.user?.name) {
+            logActivity({
+                username: session.user.name,
+                action: 'delete',
+                entityType: 'purchase',
+                entityId: id,
+                entityName: `${purchase.part_name || 'Part'} x${purchase.quantity}`,
+                details: `Deleted purchase of ${purchase.quantity}x "${purchase.part_name || 'Part'}" (€${purchase.total_cost.toFixed(2)})`
+            });
+        }
 
         return NextResponse.json({ success: true });
     } catch (error) {

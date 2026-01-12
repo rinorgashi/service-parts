@@ -1,5 +1,7 @@
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { logActivity } from '@/lib/activityLog';
 
 // GET all sales with joins
 export async function GET(request) {
@@ -53,6 +55,7 @@ export async function GET(request) {
 // POST create new sale
 export async function POST(request) {
     try {
+        const session = await getServerSession();
         const db = getDb();
         const body = await request.json();
 
@@ -139,6 +142,18 @@ export async function POST(request) {
       WHERE s.id = ?
     `).get(saleId);
 
+        // Log activity
+        if (session?.user?.name) {
+            logActivity({
+                username: session.user.name,
+                action: 'create',
+                entityType: 'sale',
+                entityId: saleId,
+                entityName: `${part.part_name} x${quantity}`,
+                details: `Sold ${quantity}x "${part.part_name}" for €${total_price.toFixed(2)}${guarantee_included ? ' (guarantee)' : ''}`
+            });
+        }
+
         return NextResponse.json(newSale, { status: 201 });
     } catch (error) {
         console.error('Error creating sale:', error);
@@ -149,6 +164,7 @@ export async function POST(request) {
 // DELETE sale (with stock restoration)
 export async function DELETE(request) {
     try {
+        const session = await getServerSession();
         const db = getDb();
         const { searchParams } = new URL(request.url);
         const id = searchParams.get('id');
@@ -157,8 +173,13 @@ export async function DELETE(request) {
             return NextResponse.json({ error: 'Sale ID is required' }, { status: 400 });
         }
 
-        // Get sale info first
-        const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
+        // Get sale info first with part name
+        const sale = db.prepare(`
+            SELECT s.*, p.part_name
+            FROM sales s
+            LEFT JOIN parts p ON s.part_id = p.id
+            WHERE s.id = ?
+        `).get(id);
         if (!sale) {
             return NextResponse.json({ error: 'Sale not found' }, { status: 404 });
         }
@@ -178,6 +199,18 @@ export async function DELETE(request) {
         });
 
         deleteSale();
+
+        // Log activity
+        if (session?.user?.name) {
+            logActivity({
+                username: session.user.name,
+                action: 'delete',
+                entityType: 'sale',
+                entityId: id,
+                entityName: `${sale.part_name || 'Part'} x${sale.quantity}`,
+                details: `Deleted sale of ${sale.quantity}x "${sale.part_name || 'Part'}" (€${sale.total_price.toFixed(2)})`
+            });
+        }
 
         return NextResponse.json({ success: true });
     } catch (error) {

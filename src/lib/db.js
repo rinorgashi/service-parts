@@ -204,6 +204,22 @@ function initializeTables(database) {
     )
   `);
 
+  // Create Activity Logs table
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      username TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER,
+      entity_name TEXT,
+      details TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `);
+
   // Create indexes
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_parts_category ON parts(category);
@@ -213,6 +229,8 @@ function initializeTables(database) {
     CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date);
     CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(purchase_date);
     CREATE INDEX IF NOT EXISTS idx_service_records_customer ON service_records(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_activity_logs_user ON activity_logs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_activity_logs_date ON activity_logs(created_at);
   `);
 }
 

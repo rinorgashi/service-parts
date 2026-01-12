@@ -1,5 +1,7 @@
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { logActivity } from '@/lib/activityLog';
 
 // GET all parts or search
 export async function GET(request) {
@@ -46,6 +48,7 @@ export async function GET(request) {
 // POST create new part
 export async function POST(request) {
     try {
+        const session = await getServerSession();
         const db = getDb();
         const body = await request.json();
 
@@ -87,6 +90,19 @@ export async function POST(request) {
         );
 
         const newPart = db.prepare('SELECT * FROM parts WHERE id = ?').get(result.lastInsertRowid);
+
+        // Log activity
+        if (session?.user?.name) {
+            logActivity({
+                username: session.user.name,
+                action: 'create',
+                entityType: 'part',
+                entityId: newPart.id,
+                entityName: part_name,
+                details: `Created part "${part_name}" in category "${category}"`
+            });
+        }
+
         return NextResponse.json(newPart, { status: 201 });
     } catch (error) {
         console.error('Error creating part:', error);
@@ -97,6 +113,7 @@ export async function POST(request) {
 // PUT update part
 export async function PUT(request) {
     try {
+        const session = await getServerSession();
         const db = getDb();
         const body = await request.json();
         const { id, ...updates } = body;
@@ -104,6 +121,9 @@ export async function PUT(request) {
         if (!id) {
             return NextResponse.json({ error: 'Part ID is required' }, { status: 400 });
         }
+
+        // Get original part for logging
+        const originalPart = db.prepare('SELECT * FROM parts WHERE id = ?').get(id);
 
         const fields = Object.keys(updates)
             .filter(key => updates[key] !== undefined)
@@ -123,6 +143,19 @@ export async function PUT(request) {
         stmt.run(...values, id);
 
         const updatedPart = db.prepare('SELECT * FROM parts WHERE id = ?').get(id);
+
+        // Log activity
+        if (session?.user?.name && originalPart) {
+            logActivity({
+                username: session.user.name,
+                action: 'update',
+                entityType: 'part',
+                entityId: id,
+                entityName: updatedPart.part_name,
+                details: `Updated part "${updatedPart.part_name}"`
+            });
+        }
+
         return NextResponse.json(updatedPart);
     } catch (error) {
         console.error('Error updating part:', error);
@@ -133,6 +166,7 @@ export async function PUT(request) {
 // DELETE part
 export async function DELETE(request) {
     try {
+        const session = await getServerSession();
         const db = getDb();
         const { searchParams } = new URL(request.url);
         const id = searchParams.get('id');
@@ -140,6 +174,9 @@ export async function DELETE(request) {
         if (!id) {
             return NextResponse.json({ error: 'Part ID is required' }, { status: 400 });
         }
+
+        // Get part info before deleting for logging
+        const part = db.prepare('SELECT * FROM parts WHERE id = ?').get(id);
 
         // Check if part is used in any sales
         const salesCount = db.prepare('SELECT COUNT(*) as count FROM sales WHERE part_id = ?').get(id);
@@ -150,6 +187,19 @@ export async function DELETE(request) {
         }
 
         db.prepare('DELETE FROM parts WHERE id = ?').run(id);
+
+        // Log activity
+        if (session?.user?.name && part) {
+            logActivity({
+                username: session.user.name,
+                action: 'delete',
+                entityType: 'part',
+                entityId: id,
+                entityName: part.part_name,
+                details: `Deleted part "${part.part_name}"`
+            });
+        }
+
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error('Error deleting part:', error);
