@@ -41,8 +41,8 @@ export async function POST(request) {
         const buffer = Buffer.from(bytes);
         await writeFile(filepath, buffer);
 
-        // Return the public URL path
-        const imagePath = `/uploads/${filename}`;
+        // Return the API URL path (serves through API route for reliability)
+        const imagePath = `/api/uploads/${filename}`;
         return NextResponse.json({ success: true, imagePath }, { status: 201 });
     } catch (error) {
         console.error('Error uploading file:', error);
