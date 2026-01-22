@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git reset HEAD:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: add activity logging system\n\n- Create activity_logs table for audit trail\n- Add logActivity helper function\n- Log create/update/delete actions for parts, customers, sales, purchases\n- Create /api/activity-logs endpoint \\(admin only\\)\n- Add Activity Logs page with filters and pagination\n- Add Activity Logs link to sidebar\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "WebFetch(domain:195.201.95.159)"
+    ]
+  }
+}
