@@ -11,18 +11,21 @@ export async function GET(request) {
         const startDate = searchParams.get('startDate');
         const endDate = searchParams.get('endDate');
         const customerId = searchParams.get('customerId');
+        const locationId = searchParams.get('location_id');
 
         let query = `
-      SELECT 
+      SELECT
         s.*,
         p.part_name,
         p.category,
         c.name as customer_name,
         c.surname as customer_surname,
-        c.phone as customer_phone
+        c.phone as customer_phone,
+        l.name as location_name
       FROM sales s
       LEFT JOIN parts p ON s.part_id = p.id
       LEFT JOIN customers c ON s.customer_id = c.id
+      LEFT JOIN locations l ON s.location_id = l.id
       WHERE 1=1
     `;
         const params = [];
@@ -40,6 +43,11 @@ export async function GET(request) {
         if (customerId) {
             query += ' AND s.customer_id = ?';
             params.push(customerId);
+        }
+
+        if (locationId) {
+            query += ' AND s.location_id = ?';
+            params.push(locationId);
         }
 
         query += ' ORDER BY s.sale_date DESC';
@@ -67,7 +75,8 @@ export async function POST(request) {
             unit_price,
             labour_cost,
             guarantee_included,
-            notes
+            notes,
+            location_id
         } = body;
 
         if (!part_id || !quantity) {
@@ -76,15 +85,52 @@ export async function POST(request) {
             }, { status: 400 });
         }
 
-        // Check stock availability
+        // Check if part exists
         const part = db.prepare('SELECT * FROM parts WHERE id = ?').get(part_id);
         if (!part) {
             return NextResponse.json({ error: 'Part not found' }, { status: 404 });
         }
 
-        if (part.quantity_in_stock < quantity) {
+        // Get location info if provided
+        let locationName = null;
+        if (location_id) {
+            const location = db.prepare('SELECT name FROM locations WHERE id = ?').get(location_id);
+            locationName = location?.name;
+        }
+
+        // Check stock availability - check part_locations first, then fallback to parts table
+        let stockSource = 'parts'; // Track where we're getting stock from
+        let availableStock = part.quantity_in_stock;
+
+        if (location_id) {
+            // Check stock at specific location
+            const partLocation = db.prepare(
+                'SELECT * FROM part_locations WHERE part_id = ? AND location_id = ?'
+            ).get(part_id, location_id);
+
+            if (partLocation) {
+                availableStock = partLocation.quantity;
+                stockSource = 'part_locations';
+            } else {
+                // No stock at this location
+                availableStock = 0;
+            }
+        } else {
+            // No location specified - check if part has entries in part_locations
+            const totalLocationStock = db.prepare(
+                'SELECT COALESCE(SUM(quantity), 0) as total FROM part_locations WHERE part_id = ?'
+            ).get(part_id);
+
+            if (totalLocationStock.total > 0) {
+                availableStock = totalLocationStock.total;
+                stockSource = 'part_locations_total';
+            }
+        }
+
+        if (availableStock < quantity) {
+            const locationInfo = locationName ? ` at ${locationName}` : '';
             return NextResponse.json({
-                error: `Insufficient stock. Available: ${part.quantity_in_stock}`
+                error: `Insufficient stock${locationInfo}. Available: ${availableStock}`
             }, { status: 400 });
         }
 
@@ -96,12 +142,12 @@ export async function POST(request) {
 
         // Start transaction
         const insertSale = db.transaction(() => {
-            // Create sale record
+            // Create sale record with location_id
             const saleStmt = db.prepare(`
         INSERT INTO sales (
-          part_id, customer_id, service_record_id, quantity, 
-          unit_price, labour_cost, total_price, guarantee_included, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          part_id, customer_id, service_record_id, quantity,
+          unit_price, labour_cost, total_price, guarantee_included, notes, location_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
             const result = saleStmt.run(
@@ -113,16 +159,48 @@ export async function POST(request) {
                 effectiveLabourCost,
                 total_price,
                 guarantee_included ? 1 : 0,
-                notes || ''
+                notes || '',
+                location_id || null
             );
 
-            // Update stock
-            db.prepare(`
-        UPDATE parts 
-        SET quantity_in_stock = quantity_in_stock - ?, 
-            updated_at = datetime('now')
-        WHERE id = ?
-      `).run(quantity, part_id);
+            // Update stock based on where we tracked it
+            if (location_id && stockSource === 'part_locations') {
+                // Update stock at specific location in part_locations
+                db.prepare(`
+                    UPDATE part_locations
+                    SET quantity = quantity - ?,
+                        updated_at = datetime('now')
+                    WHERE part_id = ? AND location_id = ?
+                `).run(quantity, part_id, location_id);
+
+                // Also update the parts table for backward compatibility
+                const totalStock = db.prepare(
+                    'SELECT COALESCE(SUM(quantity), 0) as total FROM part_locations WHERE part_id = ?'
+                ).get(part_id);
+                db.prepare(`
+                    UPDATE parts
+                    SET quantity_in_stock = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                `).run(totalStock.total, part_id);
+            } else if (!location_id && stockSource === 'part_locations_total') {
+                // No specific location - just update parts table (legacy behavior)
+                // This should be avoided in new flows; location should be required
+                db.prepare(`
+                    UPDATE parts
+                    SET quantity_in_stock = quantity_in_stock - ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                `).run(quantity, part_id);
+            } else {
+                // Legacy: update parts table directly
+                db.prepare(`
+                    UPDATE parts
+                    SET quantity_in_stock = quantity_in_stock - ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                `).run(quantity, part_id);
+            }
 
             return result.lastInsertRowid;
         });
@@ -130,27 +208,30 @@ export async function POST(request) {
         const saleId = insertSale();
 
         const newSale = db.prepare(`
-      SELECT 
+      SELECT
         s.*,
         p.part_name,
         p.category,
         c.name as customer_name,
-        c.surname as customer_surname
+        c.surname as customer_surname,
+        l.name as location_name
       FROM sales s
       LEFT JOIN parts p ON s.part_id = p.id
       LEFT JOIN customers c ON s.customer_id = c.id
+      LEFT JOIN locations l ON s.location_id = l.id
       WHERE s.id = ?
     `).get(saleId);
 
         // Log activity
         if (session?.user?.name) {
+            const locationInfo = locationName ? ` from ${locationName}` : '';
             logActivity({
                 username: session.user.name,
                 action: 'create',
                 entityType: 'sale',
                 entityId: saleId,
                 entityName: `${part.part_name} x${quantity}`,
-                details: `Sold ${quantity}x "${part.part_name}" for €${total_price.toFixed(2)}${guarantee_included ? ' (guarantee)' : ''}`
+                details: `Sold ${quantity}x "${part.part_name}"${locationInfo} for €${total_price.toFixed(2)}${guarantee_included ? ' (guarantee)' : ''}`
             });
         }
 
@@ -173,11 +254,12 @@ export async function DELETE(request) {
             return NextResponse.json({ error: 'Sale ID is required' }, { status: 400 });
         }
 
-        // Get sale info first with part name
+        // Get sale info first with part name and location
         const sale = db.prepare(`
-            SELECT s.*, p.part_name
+            SELECT s.*, p.part_name, l.name as location_name
             FROM sales s
             LEFT JOIN parts p ON s.part_id = p.id
+            LEFT JOIN locations l ON s.location_id = l.id
             WHERE s.id = ?
         `).get(id);
         if (!sale) {
@@ -186,13 +268,48 @@ export async function DELETE(request) {
 
         // Restore stock and delete sale
         const deleteSale = db.transaction(() => {
-            // Restore stock
-            db.prepare(`
-        UPDATE parts 
-        SET quantity_in_stock = quantity_in_stock + ?,
-            updated_at = datetime('now')
-        WHERE id = ?
-      `).run(sale.quantity, sale.part_id);
+            // Restore stock to the location it came from
+            if (sale.location_id) {
+                // Check if part_location entry exists
+                const partLocation = db.prepare(
+                    'SELECT * FROM part_locations WHERE part_id = ? AND location_id = ?'
+                ).get(sale.part_id, sale.location_id);
+
+                if (partLocation) {
+                    // Update existing entry
+                    db.prepare(`
+                        UPDATE part_locations
+                        SET quantity = quantity + ?,
+                            updated_at = datetime('now')
+                        WHERE part_id = ? AND location_id = ?
+                    `).run(sale.quantity, sale.part_id, sale.location_id);
+                } else {
+                    // Create new entry (in case location was deleted and recreated)
+                    db.prepare(`
+                        INSERT INTO part_locations (part_id, location_id, quantity, min_stock_level)
+                        VALUES (?, ?, ?, 5)
+                    `).run(sale.part_id, sale.location_id, sale.quantity);
+                }
+
+                // Update parts table for backward compatibility
+                const totalStock = db.prepare(
+                    'SELECT COALESCE(SUM(quantity), 0) as total FROM part_locations WHERE part_id = ?'
+                ).get(sale.part_id);
+                db.prepare(`
+                    UPDATE parts
+                    SET quantity_in_stock = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                `).run(totalStock.total, sale.part_id);
+            } else {
+                // Legacy sale without location - restore to parts table
+                db.prepare(`
+                    UPDATE parts
+                    SET quantity_in_stock = quantity_in_stock + ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                `).run(sale.quantity, sale.part_id);
+            }
 
             // Delete sale
             db.prepare('DELETE FROM sales WHERE id = ?').run(id);
@@ -202,13 +319,14 @@ export async function DELETE(request) {
 
         // Log activity
         if (session?.user?.name) {
+            const locationInfo = sale.location_name ? ` (${sale.location_name})` : '';
             logActivity({
                 username: session.user.name,
                 action: 'delete',
                 entityType: 'sale',
                 entityId: id,
                 entityName: `${sale.part_name || 'Part'} x${sale.quantity}`,
-                details: `Deleted sale of ${sale.quantity}x "${sale.part_name || 'Part'}" (€${sale.total_price.toFixed(2)})`
+                details: `Deleted sale of ${sale.quantity}x "${sale.part_name || 'Part'}"${locationInfo} (€${sale.total_price.toFixed(2)})`
             });
         }
 

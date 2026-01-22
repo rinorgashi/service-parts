@@ -3,36 +3,38 @@
 import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import Modal from '@/components/Modal';
-import { TruckIcon, Trash2 } from 'lucide-react';
+import { TruckIcon, Trash2, MapPin } from 'lucide-react';
 
 export default function Purchases() {
     const [purchases, setPurchases] = useState([]);
     const [parts, setParts] = useState([]);
+    const [locations, setLocations] = useState([]);
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
     const [formData, setFormData] = useState({
-        part_id: '', quantity: '', unit_cost: '', supplier: '', notes: ''
+        part_id: '', quantity: '', unit_cost: '', supplier: '', notes: '', location_id: ''
     });
 
     useEffect(() => { fetchData(); }, []);
 
     const fetchData = async () => {
         try {
-            const [purchasesRes, partsRes] = await Promise.all([
-                fetch('/api/purchases'), fetch('/api/parts')
+            const [purchasesRes, partsRes, locationsRes] = await Promise.all([
+                fetch('/api/purchases'), fetch('/api/parts'), fetch('/api/locations')
             ]);
-            const [purchasesData, partsData] = await Promise.all([
-                purchasesRes.json(), partsRes.json()
+            const [purchasesData, partsData, locationsData] = await Promise.all([
+                purchasesRes.json(), partsRes.json(), locationsRes.json()
             ]);
             setPurchases(purchasesData);
             setParts(partsData);
+            setLocations(locationsData);
         } catch (error) {
             console.error('Error:', error);
         } finally { setLoading(false); }
     };
 
     const openAddModal = () => {
-        setFormData({ part_id: '', quantity: '', unit_cost: '', supplier: '', notes: '' });
+        setFormData({ part_id: '', quantity: '', unit_cost: '', supplier: '', notes: '', location_id: '' });
         setModalOpen(true);
     };
 
@@ -41,7 +43,8 @@ export default function Purchases() {
         setFormData({
             ...formData, part_id: partId,
             unit_cost: part ? part.purchase_price.toString() : '',
-            supplier: part ? part.supplier : ''
+            supplier: part ? part.supplier : '',
+            location_id: '' // Reset location when part changes
         });
     };
 
@@ -58,7 +61,9 @@ export default function Purchases() {
                     part_id: parseInt(formData.part_id),
                     quantity: parseInt(formData.quantity),
                     unit_cost: parseFloat(formData.unit_cost),
-                    supplier: formData.supplier, notes: formData.notes
+                    supplier: formData.supplier,
+                    notes: formData.notes,
+                    location_id: formData.location_id ? parseInt(formData.location_id) : null
                 })
             });
             if (!res.ok) { const data = await res.json(); alert(data.error); return; }
@@ -95,12 +100,13 @@ export default function Purchases() {
                 ) : (
                     <div className="table-container">
                         <table className="table">
-                            <thead><tr><th>Date</th><th>Part</th><th>Qty</th><th>Unit Cost</th><th>Total</th><th>Supplier</th><th>Actions</th></tr></thead>
+                            <thead><tr><th>Date</th><th>Part</th><th>Location</th><th>Qty</th><th>Unit Cost</th><th>Total</th><th>Supplier</th><th>Actions</th></tr></thead>
                             <tbody>
                                 {purchases.map((p) => (
                                     <tr key={p.id}>
                                         <td>{formatDate(p.purchase_date)}</td>
                                         <td><strong>{p.part_name}</strong></td>
+                                        <td>{p.location_name ? <span className="badge badge-info"><MapPin size={12} style={{ marginRight: '4px' }} />{p.location_name}</span> : <span className="text-muted">-</span>}</td>
                                         <td>{p.quantity}</td>
                                         <td>{formatCurrency(p.unit_cost)}</td>
                                         <td><strong>{formatCurrency(p.total_cost)}</strong></td>
@@ -122,6 +128,16 @@ export default function Purchases() {
                             <option value="">Select a part</option>
                             {parts.map(p => <option key={p.id} value={p.id}>{p.part_name} (Stock: {p.quantity_in_stock})</option>)}
                         </select>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Destination Location</label>
+                        <select className="form-select" value={formData.location_id} onChange={(e) => setFormData({ ...formData, location_id: e.target.value })}>
+                            <option value="">Select location (optional)</option>
+                            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        </select>
+                        <div className="text-muted" style={{ fontSize: '0.85rem', marginTop: '4px' }}>
+                            Stock will be added to this warehouse/location
+                        </div>
                     </div>
                     <div className="form-row">
                         <div className="form-group"><label className="form-label">Quantity *</label><input type="number" min="1" className="form-input" value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} required /></div>

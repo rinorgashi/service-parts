@@ -232,6 +232,106 @@ function initializeTables(database) {
     CREATE INDEX IF NOT EXISTS idx_activity_logs_user ON activity_logs(user_id);
     CREATE INDEX IF NOT EXISTS idx_activity_logs_date ON activity_logs(created_at);
   `);
+
+  // Create Part Locations table (multi-warehouse support)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS part_locations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      part_id INTEGER NOT NULL,
+      location_id INTEGER NOT NULL,
+      quantity INTEGER DEFAULT 0,
+      min_stock_level INTEGER DEFAULT 5,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE CASCADE,
+      FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE RESTRICT,
+      UNIQUE(part_id, location_id)
+    )
+  `);
+
+  // Create Stock Transfers table
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS stock_transfers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      part_id INTEGER NOT NULL,
+      from_location_id INTEGER NOT NULL,
+      to_location_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL,
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE CASCADE,
+      FOREIGN KEY (from_location_id) REFERENCES locations(id),
+      FOREIGN KEY (to_location_id) REFERENCES locations(id)
+    )
+  `);
+
+  // Add location_id to sales table (migration)
+  try {
+    database.exec(`ALTER TABLE sales ADD COLUMN location_id INTEGER REFERENCES locations(id)`);
+  } catch (e) { /* Column already exists */ }
+
+  // Add location_id to purchases table (migration)
+  try {
+    database.exec(`ALTER TABLE purchases ADD COLUMN location_id INTEGER REFERENCES locations(id)`);
+  } catch (e) { /* Column already exists */ }
+
+  // Create indexes for new tables
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_part_locations_part ON part_locations(part_id);
+    CREATE INDEX IF NOT EXISTS idx_part_locations_location ON part_locations(location_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_transfers_part ON stock_transfers(part_id);
+    CREATE INDEX IF NOT EXISTS idx_sales_location ON sales(location_id);
+    CREATE INDEX IF NOT EXISTS idx_purchases_location ON purchases(location_id);
+  `);
+
+  // Migrate existing parts data to part_locations if not already done
+  migrateExistingPartsToLocations(database);
+}
+
+// Migration function to move existing stock to part_locations table
+function migrateExistingPartsToLocations(database) {
+  // Check if migration is needed by looking for parts with stock but no entries in part_locations
+  const partsWithStock = database.prepare(`
+    SELECT p.id, p.location, p.quantity_in_stock, p.min_stock_level
+    FROM parts p
+    WHERE p.quantity_in_stock > 0 OR p.location IS NOT NULL AND p.location != ''
+  `).all();
+
+  if (partsWithStock.length === 0) return;
+
+  // Check if these parts already have entries in part_locations
+  const existingMigrations = database.prepare(`
+    SELECT DISTINCT part_id FROM part_locations
+  `).all();
+  const migratedPartIds = new Set(existingMigrations.map(e => e.part_id));
+
+  const partsToMigrate = partsWithStock.filter(p => !migratedPartIds.has(p.id));
+  if (partsToMigrate.length === 0) return;
+
+  // Get or create default location for migration
+  let defaultLocation = database.prepare(`SELECT id FROM locations LIMIT 1`).get();
+  if (!defaultLocation) {
+    database.prepare(`INSERT INTO locations (name, description) VALUES (?, ?)`).run('Main Warehouse', 'Default warehouse location');
+    defaultLocation = database.prepare(`SELECT id FROM locations ORDER BY id DESC LIMIT 1`).get();
+  }
+
+  const insertPartLocation = database.prepare(`
+    INSERT OR IGNORE INTO part_locations (part_id, location_id, quantity, min_stock_level)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  for (const part of partsToMigrate) {
+    // Try to find matching location by name
+    let locationId = defaultLocation.id;
+    if (part.location) {
+      const matchingLocation = database.prepare(`SELECT id FROM locations WHERE name = ?`).get(part.location);
+      if (matchingLocation) {
+        locationId = matchingLocation.id;
+      }
+    }
+    insertPartLocation.run(part.id, locationId, part.quantity_in_stock || 0, part.min_stock_level || 5);
+  }
 }
 
 export default getDb;

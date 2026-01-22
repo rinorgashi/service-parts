@@ -39,6 +39,8 @@ src/
 │       ├── service-records/route.js
 │       ├── categories/route.js
 │       ├── locations/route.js
+│       ├── part-locations/route.js  # Multi-warehouse stock management
+│       ├── stock-transfer/route.js  # Inter-warehouse transfers
 │       ├── stats/route.js
 │       ├── upload/route.js         # Image upload
 │       ├── users/route.js          # User CRUD (admin only)
@@ -67,11 +69,13 @@ public/uploads/                # Uploaded part images (gitignored)
 2. **categories** - Part categories (TV, Refrigerator, etc.)
 3. **locations** - Storage locations (shelves, warehouses)
 4. **parts** - Inventory (name, category, location, serial, prices, stock, supplier, has_guarantee, image_path)
-5. **customers** - Customer records (name, surname, phone, email, address, notes)
-6. **service_records** - Repair jobs with status tracking
-7. **sales** - Transactions (part, customer, quantity, unit_price, labour_cost, guarantee_included)
-8. **purchases** - Stock acquisition records
-9. **activity_logs** - User activity audit trail (username, action, entity_type, entity_id, entity_name, details)
+5. **part_locations** - Multi-warehouse stock tracking (part_id, location_id, quantity, min_stock_level)
+6. **customers** - Customer records (name, surname, phone, email, address, notes)
+7. **service_records** - Repair jobs with status tracking
+8. **sales** - Transactions (part, customer, quantity, unit_price, labour_cost, guarantee_included, location_id)
+9. **purchases** - Stock acquisition records (includes location_id)
+10. **stock_transfers** - Inter-warehouse transfers (part_id, from_location_id, to_location_id, quantity, notes)
+11. **activity_logs** - User activity audit trail (username, action, entity_type, entity_id, entity_name, details)
 
 ## Key Business Logic
 
@@ -80,6 +84,28 @@ public/uploads/                # Uploaded part images (gitignored)
 - Deleting sales restores stock
 - Purchases automatically increment stock
 - Deleting purchases decrements stock
+
+### Multi-Warehouse Inventory
+- Parts can have stock in multiple locations (warehouses)
+- `part_locations` table tracks quantity per location
+- Sales require selecting a source location (if part has multiple locations)
+- Purchases can specify a destination location
+- Stock transfers move inventory between locations atomically
+- Dashboard shows stock breakdown by location
+- Low stock alerts are per-location
+
+### Stock Flow
+```
+Sale → UPDATE part_locations SET quantity = quantity - X
+       WHERE part_id = ? AND location_id = ?
+       (Also updates parts.quantity_in_stock for backward compatibility)
+
+Purchase → INSERT/UPDATE part_locations
+           (Upserts quantity at specified location)
+
+Transfer → Decrements source location, increments destination
+           (Atomic transaction, recorded in stock_transfers table)
+```
 
 ### Guarantee System
 When `guarantee_included = true`:

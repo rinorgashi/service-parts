@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import {
   Package, Users, ShoppingCart, DollarSign,
-  AlertTriangle, TrendingUp, ArrowRight
+  AlertTriangle, TrendingUp, ArrowRight, MapPin, ArrowRightLeft
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -33,6 +33,15 @@ export default function Dashboard() {
       style: 'currency',
       currency: 'EUR'
     }).format(amount || 0);
+  };
+
+  const formatDate = (d) => {
+    return new Date(d).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   if (loading) {
@@ -134,6 +143,7 @@ export default function Dashboard() {
                   <thead>
                     <tr>
                       <th>Part</th>
+                      <th>Location</th>
                       <th>Customer</th>
                       <th>Amount</th>
                     </tr>
@@ -142,6 +152,16 @@ export default function Dashboard() {
                     {stats.recentSales.map((sale) => (
                       <tr key={sale.id}>
                         <td>{sale.part_name}</td>
+                        <td>
+                          {sale.location_name ? (
+                            <span className="badge badge-info" style={{ fontSize: '0.75rem' }}>
+                              <MapPin size={10} style={{ marginRight: '2px' }} />
+                              {sale.location_name}
+                            </span>
+                          ) : (
+                            <span className="text-muted">-</span>
+                          )}
+                        </td>
                         <td>
                           {sale.customer_name
                             ? `${sale.customer_name} ${sale.customer_surname}`
@@ -205,6 +225,125 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+
+        {/* Stock by Location */}
+        {stats?.locationStats?.length > 0 && (
+          <div className="card" style={{ marginTop: '24px' }}>
+            <div className="card-header">
+              <h3 className="card-title">Stock by Location</h3>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+              {stats.locationStats.map((loc) => (
+                <div
+                  key={loc.location_id}
+                  style={{
+                    background: 'var(--bg-tertiary)',
+                    padding: '16px 20px',
+                    borderRadius: 'var(--radius-md)',
+                    minWidth: '180px',
+                    flex: '1 1 180px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <MapPin size={16} className="text-muted" />
+                    <span style={{ fontWeight: '600' }}>{loc.location_name}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span className="text-muted">Parts:</span>
+                    <span>{loc.parts_count}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span className="text-muted">Total Stock:</span>
+                    <span>{loc.total_stock}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span className="text-muted">Value:</span>
+                    <span>{formatCurrency(loc.stock_value)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Low Stock by Location */}
+        {stats?.lowStockByLocation?.length > 0 && (
+          <div className="card" style={{ marginTop: '24px' }}>
+            <div className="card-header">
+              <h3 className="card-title">Low Stock by Location</h3>
+            </div>
+            <div className="table-container" style={{ border: 'none' }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Location</th>
+                    <th>Part</th>
+                    <th>Category</th>
+                    <th>Stock</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.lowStockByLocation.map((item, index) => (
+                    <tr key={`${item.location_id}-${item.part_id}-${index}`}>
+                      <td>
+                        <span className="badge badge-info">
+                          <MapPin size={12} style={{ marginRight: '4px' }} />
+                          {item.location_name}
+                        </span>
+                      </td>
+                      <td>{item.part_name}</td>
+                      <td><span className="badge badge-default">{item.category}</span></td>
+                      <td>
+                        <div className="stock-indicator">
+                          <span className={`stock-dot ${item.quantity === 0 ? 'low' : 'medium'}`}></span>
+                          {item.quantity} / {item.min_stock_level}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Recent Stock Transfers */}
+        {stats?.recentTransfers?.length > 0 && (
+          <div className="card" style={{ marginTop: '24px' }}>
+            <div className="card-header">
+              <h3 className="card-title">Recent Stock Transfers</h3>
+            </div>
+            <div className="table-container" style={{ border: 'none' }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Part</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Qty</th>
+                    <th>By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.recentTransfers.map((transfer) => (
+                    <tr key={transfer.id}>
+                      <td style={{ whiteSpace: 'nowrap' }}>{formatDate(transfer.created_at)}</td>
+                      <td>{transfer.part_name}</td>
+                      <td><span className="badge badge-default">{transfer.from_location_name}</span></td>
+                      <td>
+                        <ArrowRightLeft size={14} style={{ margin: '0 4px' }} className="text-muted" />
+                        <span className="badge badge-info">{transfer.to_location_name}</span>
+                      </td>
+                      <td>{transfer.quantity}</td>
+                      <td className="text-muted">{transfer.created_by}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Categories Breakdown */}
         {stats?.categories?.length > 0 && (
